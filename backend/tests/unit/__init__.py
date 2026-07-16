@@ -1,0 +1,1 @@
+"""Fast, dependency-free tests."""

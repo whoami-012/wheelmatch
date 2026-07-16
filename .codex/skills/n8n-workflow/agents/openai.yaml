@@ -1,0 +1,4 @@
+interface:
+  display_name: "n8n Workflow"
+  short_description: "Safely manage n8n workflows through MCP."
+  default_prompt: "Use the connected n8n MCP to inspect the relevant workflow, make the smallest safe draft change, validate it, and report credentials, risks, and required approvals."
