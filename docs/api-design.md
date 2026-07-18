@@ -33,10 +33,17 @@ Changing filters or search origin requires a new cursor. Offset pagination is no
 | POST | /auth/login | Start authenticated session |
 | POST | /auth/refresh | Rotate refresh session |
 | POST | /auth/logout | Revoke current session |
+| POST | /auth/logout-all | Revoke every session for current user |
+| POST | /auth/password/change | Change password and revoke every session |
 | POST | /auth/verify-email | Verify email challenge |
 | POST | /auth/verify-phone | Verify phone challenge |
-| POST | /auth/recovery/* | Password/account recovery |
+| POST | /auth/recovery/request | Accept a generic password-recovery request |
+| POST | /auth/recovery/reset | Consume recovery token and revoke every session |
 | GET/PATCH | /me/profile | Personal profile |
+| GET | /me/sessions | List current user's session families |
+| DELETE | /me/sessions/{id} | Revoke only a current user's session family |
+| POST | /me/identity-verifications | Idempotently start/resume provider-hosted identity capture |
+| GET | /me/identity-verification | Privacy-safe effective identity-verification state |
 | GET | /me/capabilities | Effective buyer/seller/dealer capabilities |
 | GET/PATCH | /me/notification-preferences | Notification settings |
 
@@ -45,10 +52,18 @@ Changing filters or search origin requires a new cursor. Offset pagination is no
 | Method | Path | Purpose |
 |---|---|---|
 | GET | /me/seller-readiness | Missing seller requirements |
-| POST/PATCH | /me/seller-profile | Create/update seller profile |
+| POST | /me/seller-profile | Create optional seller profile |
 | GET | /me/dealer-memberships | Active and historical memberships |
+| POST | /dealer-organizations | Create organization with owner membership |
+| GET | /dealer-organizations/{id} | Read organization through current membership |
+| POST | /dealer-organizations/{id}/memberships | Invite member with explicit role |
+| PATCH | /dealer-organizations/{id}/memberships/{membership_id} | Role/status transition with expected version |
+| POST | /me/dealer-memberships/{membership_id}/accept | Consume single-use invitation |
+| POST | /me/dealer-memberships/{membership_id}/leave | Leave with expected version |
 | POST | /listings | Create private draft with owner context |
 | GET/PATCH | /listings/{id} | Authorized listing read/update |
+| POST | /listings/{id}/ownership-verification/start | Start/resume personal owner–vehicle capture |
+| GET | /listings/{id}/ownership-verification/status | Privacy-safe personal ownership state |
 | POST | /listings/{id}/submit | Start verification/moderation readiness flow |
 | POST | /listings/{id}/publish | Idempotent publication command |
 | POST | /listings/{id}/relist | Create linked private relist draft |
@@ -70,6 +85,51 @@ Owner context is explicit in creation:
 
 The backend never trusts organization_id without active membership and permission checks.
 
+Phase 3 Slice 3 implements only the two ownership-verification routes above. Start requires
+`Idempotency-Key`, an optimistic listing version, current personal ownership, and current verified
+identity. The provider-hosted capture URL appears only in the start response. Status omits raw and
+keyed identifiers, provider references/result IDs, documents, payloads, evidence, scores, capture
+URLs, and internal reasons. Provider results enter through an application-service boundary; no
+public ownership-provider webhook is defined.
+
+Phase 3 Slice 4 implements `POST /listings/{id}/submit` and
+`GET /listings/{id}/publication-readiness` for personal listings only. Submit requires
+`Idempotency-Key` plus `expected_version`; identical retries replay the stored response and
+conflicting key reuse returns `IDEMPOTENCY_KEY_CONFLICT`. Readiness is read-only and recomputes
+current gates. Responses expose only listing/submission state plus gate name, safe state/code, and
+remediation action. Exact location, provider/document evidence, HMACs, fingerprints, media keys,
+hashes, and URLs are never serialized. Authorized dealer operators receive
+`DEALER_SUBMISSION_NOT_IMPLEMENTED`; other callers retain safe not-found behavior. Moderation and
+publication remain unimplemented, so `publishable` is always false.
+
+Phase 3 Slice 5 extends ownership start/status and submission/readiness with the safe `reused`
+projection. Eligible cross-listing personal evidence returns the original ownership attempt
+without creating a provider session or another attempt. Submission/readiness expose only the
+reuse boolean and retain the selected verification internally; source listing IDs, raw/keyed
+vehicle identifiers, fingerprints, provider/document references, evidence, and internal risk
+reasons remain excluded. GET status/readiness do not write audit or outbox state. Dealer ownership
+reuse remains unsupported, and moderation/publication behavior is unchanged.
+
+The Phase 1 endpoints above are implemented. Backend Phase 2 implements private draft create/read/
+update and current-owner listing queries. Draft creation requires `Idempotency-Key`; updates use
+`expected_version`; current-owner queries use signed, expiring, filter-bound keyset cursors.
+Publication, relisting, and availability routes remain Phase 3 roadmap contracts.
+
+### Catalogue and private location
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | /catalogue/makes | Bounded make browse by car/bike classification |
+| GET | /catalogue/models | Bounded make-child model browse |
+| GET | /catalogue/variants | Bounded model-child variant browse |
+| GET | /catalogue/search | Bounded normalized controlled-taxonomy search |
+| GET/PUT | /listings/{id}/location | Authorized privacy-safe projection/private point write |
+
+Personal location responses expose locality, coarse area, and an optional distance band only.
+They have no latitude, longitude, address, internal cell, or exact-distance field. A dealer public
+business address can be selected only from a verified, published address belonging to the current
+listing organization; caller coordinates are not used for its public pin.
+
 ### Media
 
 | Method | Path | Purpose |
@@ -80,6 +140,11 @@ The backend never trusts organization_id without active membership and permissio
 | DELETE | /media/{media_id} | Remove draft media or schedule deletion |
 
 See [media storage](media-storage.md).
+
+Backend Phase 2 implements these four media routes for private drafts. Upload intent creation is
+idempotent and returns a short-lived constrained PUT. Completion validates the stored private
+object outside the database transaction, then commits processing state, audit, and the durable
+`media.processing.requested` event together. Ready/moderation/publication states are not exposed.
 
 ### Discovery and preferences
 
@@ -156,7 +221,10 @@ Use /internal/v1 with service authentication, mTLS where practical, strict audie
 - Moderation and analytics batch claims.
 - DLQ and automation failure reporting.
 
-Callbacks carry event/provider IDs and are idempotent. They never accept a caller-supplied user/listing identity without resolving the stored provider reference.
+Callbacks carry event/provider IDs and are idempotent. They never accept a caller-supplied
+user/listing identity without resolving the stored provider reference. Phase 3 Slice 2 exposes no
+public identity-provider callback; provider-result ingestion is an application-service boundary
+until the production provider, signature, and replay contract are accepted.
 
 ## WebSocket contract
 

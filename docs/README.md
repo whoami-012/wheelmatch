@@ -70,3 +70,15 @@ This directory is the implementation source of truth for the approved WheelMatch
 | Multi-language and multi-currency | Not included in MVP unless launch market requires them | Future decision |
 
 When an assumption is resolved, update [architecture decisions](architecture-decisions.md) and every directly affected contract before implementation.
+
+## Implementation and external testing workflow
+
+- The main Codex agent exclusively owns production code, migrations, dependencies, tests, and documentation.
+- External AI agents and test runners operate on a separate clone/worktree at a fixed commit and must remain read-only.
+- Before implementation, define a requirement-to-test impact matrix listing mandatory and explicitly excluded tests.
+- During implementation, run only targeted Ruff, mypy, and affected tests.
+- Test behavior at the lowest reliable layer; do not duplicate the same rule across unit, repository, API, and end-to-end tests.
+- Run the complete backend acceptance suite once after targeted checks pass.
+- Do not add or run tests for unrelated phases, mobile, unchanged infrastructure, or hypothetical behavior.
+- External test reports must include exact commands, exit codes, concise failures, and no secret values.
+- The main agent reviews failures and applies all fixes.

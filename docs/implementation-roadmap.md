@@ -72,6 +72,8 @@ Backend evidence: real PostGIS migration and metadata drift check passed; 26 tes
 
 **Dependencies:** Phase 0.
 
+**Backend status (2026-07-17):** Complete and accepted. Format, lint, strict typing, unit tests, generated OpenAPI, Docker Compose configuration, real PostgreSQL/PostGIS and Redis integration tests, migration, Alembic metadata drift, fresh-image startup, and documented health/readiness behavior passed. The Flutter/mobile portion was intentionally not started, so the combined phase remains open.
+
 **Deliverables**
 
 - Registration, email/phone verification, login, proposed rotating sessions, recovery.
@@ -88,9 +90,29 @@ Backend evidence: real PostGIS migration and metadata drift check passed; 26 tes
 - Owner/admin/member role matrix has object-level tests.
 - Refresh replay revokes the session family if proposed session ADR is accepted.
 
+ADR-P01 was accepted on 2026-07-17. The backend implements access-token validation against current user/session state, rotating hashed refresh sessions, family replay revocation, account/profile/seller state, dealer membership lifecycle, centralized authorization, audit/outbox writes, and versioned Redis authorization projections.
+
+Backend acceptance evidence: migration `0002_identity_authorization` is at head with no metadata drift; all 63 backend tests passed against real PostgreSQL/PostGIS and Redis with 82.32% branch-aware coverage; refresh and membership concurrency, authorization-cache behavior, audit/outbox transactions, and OpenAPI drift passed; freshly built API, worker, and outbox-relay containers started successfully; liveness and database/Redis readiness returned healthy responses.
+
 ## Phase 2 — catalogue, listings, media, and location
 
 **Dependencies:** Phases 0–1.
+
+**Backend status (2026-07-17):** The requested private-foundation scope is implemented and
+accepted. Controlled catalogue/canonical vehicle foundations, personal/dealer private drafts,
+typed car/bike specifications, optimistic updates, explicit operating context, private PostGIS
+locations, signed current-owner cursors, and private S3/LocalStack quarantine media intent/
+completion/status/removal contracts passed acceptance. The Flutter editor and actual media
+scan/re-encode/EXIF removal, moderation, derivative/CDN, verification, and publication behavior
+were intentionally not started, so the combined phase and the sanitized-derivative criterion
+remain open.
+
+Backend evidence: migration `0003_phase2_core` is at head with geography-aware metadata drift
+clean; all 72 backend tests passed against real PostgreSQL/PostGIS, Redis, and LocalStack with
+82.69% branch-aware coverage; exactly-one-owner, membership loss, audit/outbox atomicity,
+optimistic versions, `ST_DWithin`, privacy-safe projections, constrained checksum-bound uploads,
+OpenAPI drift, and fresh API/worker/outbox-relay startup passed. The API container reported
+healthy.
 
 **Deliverables**
 
@@ -113,13 +135,91 @@ Backend evidence: real PostGIS migration and metadata drift check passed; 26 tes
 
 **Dependencies:** Phase 2.
 
+**Backend Slice 1 status (2026-07-18):** Media processing evidence and sanitized derivatives
+implemented and accepted. Private `media_processing_evidence` and `media_derivatives` tables,
+expanded `listing_media` status constraint (`scanning`, `moderation_pending` added), `processed_at`
+and `failure_code` columns, lease/claim model, deterministic worker, `ImageSanitizer` with EXIF
+stripping and perceptual hashing, three derivative sizes, idempotent duplicate-delivery guard,
+atomicity test, and privacy-safe status endpoint implemented and validated.
+
+Backend evidence: migration `0004_phase3_media_processing` is at head with no Alembic metadata
+drift; 5 unit tests and 6 integration tests (including duplicate-delivery idempotency, stale-version
+rejection, invalid-signature/MIME/checksum rejection, atomicity rollback, and API privacy) passed
+against real PostgreSQL/PostGIS, Redis, and LocalStack with exit code 0; targeted Ruff and strict
+mypy clean across 19 source files; OpenAPI drift clean. The `PYTEST_CURRENT_TEST` Windows env-var
+overflow for binary parametrize IDs was resolved by adding explicit `id=` labels.
+
+**Backend Slice 2 status (2026-07-18):** Provider-neutral user identity-verification attempts and
+effective state are implemented and accepted. The slice includes append-only attempt history, one
+versioned projection per user, idempotent/concurrent start and resume, a deterministic local/test
+adapter, fail-closed non-production-provider configuration, privacy-safe self-service start/status
+routes, deterministic result replay/conflict handling, stale-attempt protection, and atomic
+attempt/projection/audit/outbox finalization. Capture URLs and provider evidence remain outside
+persistence and status/event contracts.
+
+Backend evidence: migration file `0005_phase3_identity_verification.py` is at internal revision
+`0005_phase3_identity_verify` (head) with no Alembic metadata drift; 16 focused unit tests and 7
+focused integration tests passed against real PostgreSQL with exit code 0; targeted Ruff, strict
+mypy, and OpenAPI drift checks passed. One incremental API image build completed. No real provider,
+public webhook, documents, owner–vehicle verification, moderation, publication, expiry/revocation
+propagation, or Phase 4 behavior was started.
+
+**Backend Slice 3 status (2026-07-18):** Keyed canonical vehicle identity and provider-neutral
+personal owner–vehicle verification are implemented and accepted. Active personal owners with a
+current verified identity can transiently submit normalized registration plus VIN/chassis
+material, resolve/link one versioned canonical vehicle with optimistic listing concurrency, and
+idempotently start/resume provider-hosted verification. Append-only ownership attempts bind the
+identity projection and keyed material fingerprint; provider result replay/conflict/stale rules,
+atomic audit/outbox finalization, private document-reference retention metadata, and privacy-safe
+start/status contracts are enforced. Dealer listings remain explicitly unsupported.
+
+Backend evidence: migration `0006_phase3_vehicle_ownership` is at head with no Alembic metadata
+drift; 21 focused unit tests and 4 focused real-PostgreSQL integration tests passed with exit code
+0; targeted Ruff format/check, strict mypy, and OpenAPI export/drift checks passed. No Docker image
+was rebuilt because dependencies were unchanged. A production vehicle normalizer, ownership
+provider, and signed result/webhook contract remain undecided and staging/production fail closed.
+No publication ownership checks, 180-day reuse policy, revocation propagation, moderation,
+publication, later Phase 3 slice, or Phase 4 behavior was started.
+
+**Backend Slice 4 status (2026-07-18):** Personal listing submission and publication-readiness
+projection are implemented and accepted. Submission is idempotent, optimistic-version aware,
+resumable per listing version, and transactionally records safe gate evidence, audit,
+idempotency, and the allowlisted `listing.moderation.requested` outbox event. Readiness is
+recomputed from current PostgreSQL account, seller, draft/specification, canonical vehicle,
+location, identity, ownership, and media state. Dealer submission remains explicitly unsupported.
+
+Backend evidence: migration `0007_phase3_listing_submit` is at head with no Alembic metadata
+drift; 21 focused unit tests and 4 focused real-PostgreSQL integration tests passed with exit code
+0; targeted Ruff, strict mypy, and OpenAPI export/drift checks passed. All pre-moderation gates
+still produce `publishable=false` and `moderation_pending`; no moderation decision, public URL,
+CDN state, discovery eligibility, publication/relisting transition, verification reuse,
+revocation propagation, Phase 4, or mobile behavior was started.
+
+**Backend Slice 5 status (2026-07-19):** Reusable personal owner-vehicle verification is
+implemented for ownership start/status and listing submission/readiness. The central policy
+requires the same active personal owner, canonical vehicle, current identity attempt/projection,
+vehicle identity/hash versions, compatible ownership basis, valid fingerprint binding, active
+canonical identity state, verified non-conflicting evidence, provider validity, and configurable
+freshness. Effective reuse expiry is the earlier of the provider expiry and `verified_at + 180
+days`; reuse never updates the source proof timestamps.
+
+Migration `0008_phase3_ownership_reuse` adds canonical vehicle identity state and immutable reuse
+selection fields to submission attempts. Reuse start is idempotent and listing-lock serialized;
+it creates no provider session or ownership attempt and commits one privacy-safe audit/outbox
+result. Submission records the selected original verification and policy version while retaining
+Slice 4 moderation behavior and `publishable=false`. Publication-time ownership checks,
+moderation decisions, publication/relisting, dealer verification, revocation workers, Phase 4,
+and mobile remain unimplemented.
+
+
 **Deliverables**
 
 - Identity provider adapter and append-only attempts.
 - Canonical vehicle HMAC identity and owner–vehicle verification.
-- 180-day reusable verification policy and listing ownership checks.
+- 180-day reusable verification policy (implemented in Slice 5) and publication-time listing
+  ownership checks (remaining).
 - Moderation cases/decisions and admin review UI/API.
-- Publication readiness and transactional publish/relist.
+- Publication readiness (implemented in Slice 4) and transactional publish/relist (remaining).
 - Revocation/expiry propagation workers and cache invalidation.
 
 **Acceptance criteria**

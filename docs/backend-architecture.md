@@ -44,7 +44,18 @@ backend/
   tests/
 ```
 
-The Phase 0 portions of this layout are implemented. Product modules, WebSockets and domain-specific workers are introduced only in their roadmap phases.
+Phase 0 plus backend Phase 1 `identity`, `profiles`, `dealers`, `authorization`, and `audit`
+modules are implemented. Backend Phase 2 implements `catalogue`, `listings`, `locations`, and
+`media` as private modular-monolith slices. Backend Phase 3 Slices 1–3 implement media processing,
+provider-neutral user identity verification, keyed canonical vehicle resolution, and personal
+owner–vehicle attempts. Moderation, publication, discovery, WebSockets, and later product workers
+remain roadmap targets.
+
+Slice 3 keeps provider session creation between two short transactions. The first locks the active
+personal owner, listing/version, current identity projection, and canonical match; the provider
+call has no database transaction; the second persists only private provider correlation and safe
+state. Provider-result ingestion is an application-service boundary until a production provider
+and signature contract are accepted.
 
 ## Module contract
 
@@ -66,6 +77,8 @@ Routers do not contain business logic. Repositories do not authorize. Domain mod
 | Identity | Registration, verification, sessions, suspension |
 | Profiles | User and seller profile state |
 | Dealers | Organizations, verification, memberships, permissions |
+| Authorization | Pure capability/permission policy and versioned Redis projections |
+| Audit | Append-only redacted security and lifecycle records |
 | Catalogue | Controlled vehicle taxonomies and canonical identity |
 | Listings | Drafts, ownership, lifecycle, publication evidence |
 | Locations | Private PostGIS writes, search predicates, public mapping |
@@ -94,6 +107,12 @@ Routers do not contain business logic. Repositories do not authorize. Domain mod
 
 Critical lock orders:
 
+- Identity-verification start: user, active/latest attempt, effective projection.
+- Identity-verification result: provider reference/attempt, effective projection.
+
+- Refresh: refresh-session row → session family → user; a consumed-token replay revokes the family.
+- Dealer membership: actor → organization → actor membership → target membership/user.
+
 - Interest lifecycle: listing → interest_request_thread → latest interest_request.
 - Publication: listing → canonical vehicle → owner/account verification → ownership verification → moderation evidence → conflicting listing.
 - Dealer reassignment: conversation → active assignment → target membership.
@@ -119,11 +138,14 @@ Critical lock orders:
 | Scheduler | Enqueue expiry, stale-listing, retention, and reconciliation jobs |
 | Migration job | Apply reviewed schema changes once per deployment |
 
-Phase 0 entry points are confirmed in [the backend README](../backend/README.md). WebSocket, scheduler and product-specific worker entry points are not implemented yet.
+Phase 0 runtime entry points, Phase 1 REST routers, and the Phase 3 Slice 1 media handler on the
+existing worker are confirmed in [the backend README](../backend/README.md). WebSocket, scheduler,
+and other product-specific worker handlers are not implemented yet.
 
 ## Background jobs
 
-- Media scanning, decode/re-encode, thumbnails, moderation submission.
+- Media scanning, bounded decode/re-encode, metadata stripping, and private derivatives are
+  implemented through `moderation_pending`; moderation submission is not implemented.
 - Inferred preference recalculation and feed cache invalidation.
 - Interest expiry and cooldown projection.
 - Verification expiry and revocation propagation.
@@ -133,6 +155,11 @@ Phase 0 entry points are confirmed in [the backend README](../backend/README.md)
 - Outbox and DLQ reconciliation.
 
 Schedulers enqueue work; workers own bounded processing. n8n does not own critical expiry or state transitions.
+
+Media processing uses a media-local coordinator because external calls cannot run inside the
+generic SQL consumer transaction. It claims and finalizes with short transactions; S3, scanner,
+and Pillow work occurs between them. A final transaction commits media state, versioned evidence,
+derivative rows, audit, and outbox together.
 
 ## Errors and logging
 

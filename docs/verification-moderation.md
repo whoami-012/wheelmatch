@@ -29,7 +29,18 @@ Use separate lifecycle_status, publication_status, and moderation_status. A list
 
 Identity verification is user-level and reusable until expired, revoked, or materially changed.
 
-identity_verifications is append-only and records provider/reference, attempt, status, assurance level, verified/expires/revoked times, failure code, reviewer, and superseded attempt. user_verification_states projects the effective current verification and version.
+Phase 3 Slice 2 implements append-only `identity_verifications` attempt rows and one versioned
+`user_verification_states` effective projection per user. States are `session_pending`, `pending`,
+`manual_review`, `verified`, `failed`, `expired`, and `revoked`; expiry and revocation propagation
+remain later-slice behavior. Provider session creation is idempotent and outside database
+transactions. A unique provider result ID makes duplicate delivery harmless, while terminal
+conflicts fail safely and superseded attempts cannot overwrite a newer projection.
+
+Provider-hosted capture is the only active collection path. Capture URLs are returned once to the
+authenticated caller and never stored, logged, audited, or emitted. Provider references remain
+persistence-only. Result finalization commits the attempt, effective projection version, redacted
+audit entry, and allowlisted outbox event together. No public callback exists until a production
+provider and signature contract are accepted.
 
 Material legal-name, birth-date, identity-document, fraud, or assurance-policy changes require reverification.
 
@@ -39,6 +50,18 @@ canonical_vehicles binds listings and ownership evidence to one vehicle identity
 
 - Normalize identifiers by jurisdiction.
 - Use keyed HMAC, not plain hashes, for registration and VIN/chassis identifiers.
+
+Phase 3 Slice 3 implements the personal-listing boundary. Registration plus VIN/chassis values
+exist only in request-local normalization memory; `canonical_vehicles` stores versioned keyed
+HMAC-SHA256 values. An active personal owner with a current verified, unexpired, non-revoked
+identity can link the canonical vehicle using the listing's optimistic version and start or resume
+one unresolved ownership attempt. Dealer listings remain unsupported in this slice.
+
+Ownership attempts transition `session_pending -> pending|failed` and
+`pending -> manual_review|verified|failed`. `expired` and `revoked` are schema states only;
+propagation remains later work. Provider calls occur outside transactions. Result finalization,
+audit, and allowlisted outbox state commit atomically, while duplicate, conflicting, superseded,
+identity-stale, and canonical-version-stale results are handled deterministically.
 - Store hash_version for rotation.
 - Encrypt retrievable identifiers only when operationally required.
 - Route conflicts to manual review; do not aggressively auto-merge.
@@ -56,6 +79,18 @@ A successful personal ownership verification may be reused when:
 - No transfer, registration change, theft, write-off, document conflict, or fraud signal.
 
 The initial freshness window is 180 days, configurable by compliance policy. Reuse never extends expiry.
+
+Phase 3 Slice 5 implements pre-publication reuse selection. Start/status and
+submission/readiness prefer a current valid listing verification, then evaluate the newest
+eligible owner-canonical-vehicle proof. The effective end is
+`min(original expires_at, verified_at + configured freshness)`. Reuse requires unchanged current
+identity attempt/projection, canonical identity/hash versions, compatible ownership basis, an
+active canonical identity state, valid bound fingerprint, and no newer unresolved or conflicting
+attempt. A command records one allowlisted reuse audit/outbox result; GET evaluations are
+read-only. The source `verified_at` and `expires_at` are immutable.
+
+Slice 5 does not create `listing_ownership_checks`. The publication transaction below must still
+create a fresh listing-level check and revalidate all authoritative source state.
 
 Every publication/republication creates a new listing_ownership_checks row with:
 
@@ -90,6 +125,19 @@ Support:
 - Authorized representative.
 
 Mismatches, low-confidence extraction, conflicts, and special bases enter manual review. Reviewers can approve, reject, request information, or escalate using structured reasons. High-risk overrides should require a second reviewer.
+
+## Slice 4 submission readiness boundary
+
+Personal submission records or resumes one attempt for the locked listing/version and recomputes
+account/owner, seller, typed details, canonical vehicle, private location, identity, ownership,
+and media gates from PostgreSQL. Listing/media drift is reported with the safe
+`LISTING_VERSION_CHANGED` code. Attempts retain only internal version/fingerprint bindings and a
+bounded non-authoritative safe-code projection; source tables remain authoritative.
+
+When all pre-moderation gates pass, the same transaction records `moderation_pending`, audit,
+idempotency completion, and one allowlisted `listing.moderation.requested` outbox event. No
+provider, S3, or network call occurs in that transaction. Slice 4 has no moderation decision
+source, so the moderation gate is only `not_started` or `pending` and `publishable` is always false.
 
 ## Publication transaction
 

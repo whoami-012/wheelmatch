@@ -1,0 +1,1 @@
+"""Controlled vehicle catalogue module."""

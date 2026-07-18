@@ -99,9 +99,76 @@
 - Unavailable listings expose no location.
 - Meetup share is a separate explicit post-match resource with expiry/revocation.
 
+Backend Phase 2 stores personal points only in the PostGIS persistence entity and maps authorized
+responses through a coordinate-free projection. Spatial predicates return listing identifiers,
+not exact distances. Location audit/outbox records contain visibility/version only. Dealer public
+business pins resolve the stored point from a currently verified, published organization address;
+caller-supplied coordinates cannot define that pin.
+
+## Phase 2 media boundary
+
+Quarantine objects remain private under backend-generated prefixes. Upload intents are bound to a
+currently authorized draft and sign MIME, size, checksum, key, and expiry constraints. Completion
+does S3 HEAD outside the database transaction, reauthorizes and re-locks current state, and emits
+only media/listing identifiers plus processing version. Object keys and upload URLs are excluded
+from audit/outbox payloads and response status contracts.
+
+## Phase 3 Slice 1 media sanitization boundary
+
+The worker independently validates stored bytes, size, SHA-256, signature, MIME, decoder format,
+dimensions, and decoded pixel count. It applies orientation and creates new JPEG pixel buffers so
+EXIF/GPS, XMP, IPTC, comments, ICC profiles, thumbnails, and unknown input chunks are not copied.
+Quarantine and derivative objects remain private under backend-generated constrained prefixes.
+
+Processing evidence and derivative keys/hashes are persistence-only. Owner APIs and outbox events
+expose only allowlisted identifiers, processing version, state, and safe failure code. Duplicate
+and stale events are version-gated. `moderation_pending` grants no public access or publication
+eligibility. No production malware provider is selected, so disabled/test scanners fail closed
+outside local/test environments.
+
 ## Verification privacy
 
-Prefer provider-hosted document capture. Keep provider references and derived results. Sensitive vehicle/document data is encrypted, masked in review, excluded from normal logs and exports, and retained only as required.
+Phase 3 Slice 2 uses provider-hosted capture. Capture URLs are response-only and excluded from
+persistence, logs, audit, outbox, and status contracts. Provider references and result IDs remain
+private persistence fields; self-service APIs expose only effective state, allowlisted assurance,
+lifecycle timestamps, projection version, and safe failure code. Result replay is unique and
+idempotent, terminal conflicts fail safely, and a superseded attempt cannot overwrite the current
+user projection. Disabled/deterministic providers are rejected outside local/test environments.
+
+## Phase 3 Slice 3 vehicle identity boundary
+
+Registration, VIN, and chassis values are normalized transiently and keyed with domain-separated,
+versioned HMAC-SHA256 before persistence. Plain hashes, raw identifiers, capture URLs, provider
+payloads, document evidence, and internal decisions are excluded from database projections,
+audit, outbox, logs, and APIs. Only private provider/object references may be retained with
+explicit retention metadata. A current active personal owner and current verified identity are
+revalidated before serialization and result effectiveness; `created_by_user_id` grants no owner
+access. Stale identity/canonical material cannot become an effective verified result. Local/test
+normalizers and providers are rejected in staging/production.
+
+No identity documents, legal names, birth dates, document numbers, provider payloads, scores, or
+raw assurance evidence are stored. Identity evidence cannot enter listing-media storage. No public
+provider webhook exists until provider selection, signature verification, replay window, and
+service-authentication contracts are accepted.
+
+## Phase 3 Slice 4 submission-readiness boundary
+
+Object authorization precedes sensitive evidence reads. Personal readiness DTOs expose only gate
+name, safe state/code, and remediation action; exact/private location, addresses, provider and
+document references, HMACs, material/media fingerprints, object keys, checksums, URLs, and fraud
+internals remain persistence-only. Submission locks current source evidence and commits attempt,
+audit, idempotency, and allowlisted outbox state atomically without provider/network/S3 calls.
+Stored attempt evidence is version/fingerprint gated and never grants publication eligibility.
+
+## Phase 3 Slice 5 ownership-reuse boundary
+
+Reuse is fail-closed across owner, canonical vehicle, current identity attempt/projection,
+canonical identity/hash versions, ownership basis, fingerprint shape/version binding, lifecycle,
+provider expiry, policy freshness, and newer-conflict state. Restricted vehicle identity states
+cannot be reused. Command selection is serialized by the target listing lock and atomically
+records idempotency, allowlisted audit, and outbox state without provider calls. GET evaluation is
+read-only. Responses and events omit the source listing, raw/keyed identifiers, fingerprints,
+provider/document references, evidence payloads, fraud signals, exact location, and media data.
 
 ## Abuse prevention
 

@@ -206,13 +206,13 @@ Use FCM for Android and APNs through FCM for iOS. Push is a hint; in-app state i
 
 **Consequences:** unified client integration; delivery is not guaranteed and must not carry sensitive content.
 
-## Proposed and future ADRs
+## Additional accepted, proposed, and future ADRs
 
 ### ADR-P01 — session mechanism
 
-**Status:** Proposed.
+**Status:** Accepted on 2026-07-17.
 
-Short-lived access token plus rotating opaque refresh session with family reuse detection. Confirm social login and MFA scope before implementation.
+Use short-lived signed access tokens plus rotating opaque refresh sessions with family reuse detection. Social login and MFA remain future decisions and are not part of the accepted Phase 1 session mechanism.
 
 ### ADR-P02 — pending request expiry
 

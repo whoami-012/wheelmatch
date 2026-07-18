@@ -13,7 +13,7 @@ Buyer and seller are non-exclusive capabilities of one account:
 
 ## Session design
 
-**Proposed, not yet product-confirmed:** short-lived signed access tokens plus opaque rotating refresh sessions.
+**Accepted on 2026-07-17 and implemented for backend Phase 1:** short-lived signed access tokens plus opaque rotating refresh sessions.
 
 - Store refresh-token hashes and token-family state server-side.
 - Rotate on every refresh and revoke the family on reuse detection.
@@ -25,6 +25,12 @@ Buyer and seller are non-exclusive capabilities of one account:
 - Current account, membership, assignment, and resource state are checked server-side.
 
 OIDC/social providers and MFA policy are future decisions.
+
+The implemented API transports access tokens in the `Authorization: Bearer` header and refresh tokens in JSON request/response bodies. It does not use authentication cookies, so cookie CSRF protection is not applicable to these endpoints. Access tokens carry only user, session-family, token, issuer, audience, issued-at, and expiry claims. Defaults are 15 minutes for access tokens and 30 days for refresh families. Argon2id hashes passwords; keyed HMAC-SHA-256 hashes opaque refresh, verification, recovery, invitation, and rate-limit subjects. Only hashes are persisted.
+
+Every refresh consumes the presented row and creates a replacement in the same family. Reuse of a consumed token revokes the complete family. Access-token authentication rechecks current PostgreSQL user and family state, so suspension, logout, logout-all, password change, password recovery, and replay revocation invalidate already-issued access tokens. Device metadata is limited to a user-supplied name and coarse platform.
+
+Email, phone, recovery, and dealer-invitation delivery are provider interfaces with null local adapters. Phase 1 persists expiring single-use challenges and durable outbox events; selecting and operating providers remains unresolved.
 
 ## Capabilities
 
@@ -54,6 +60,13 @@ Exactly one owner is stored: owner user or dealer organization. created_by_user_
 - Organization suspension blocks dealer operations without suspending personal accounts.
 - Account suspension removes all capabilities for that identity.
 - Owner context is selected per draft/action, not as a security-sensitive global login mode.
+
+Backend Phase 2 enforces these rules in PostgreSQL and application authorization. Personal draft
+creation requires the current active user with verified email and phone. Dealer draft operations
+re-read the active verified organization and current active membership and require
+`organization.inventory.manage`. Reads, updates, location, media, and owner-list queries repeat
+object authorization before returning a private projection; membership loss hides organization
+resources without deleting them.
 
 ## Dealer permissions
 
@@ -86,6 +99,12 @@ Inventory-manager request metadata access remains disabled until explicitly appr
 | Review documents | Purpose-scoped reviewer with case ID |
 
 Return 404 instead of 403 where resource-existence disclosure is unsafe.
+
+Phase 3 Slice 4 submission/readiness requires the current active personal owner and an active,
+ready seller profile. `created_by_user_id` never authorizes. Suspension and cross-owner access use
+the existing safe not-found boundary. An active dealer operator is authorized before receiving the
+stable `DEALER_SUBMISSION_NOT_IMPLEMENTED` response; unrelated callers cannot use that response to
+enumerate organization listings.
 
 ## Dealer membership lifecycle
 

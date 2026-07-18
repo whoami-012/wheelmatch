@@ -75,6 +75,8 @@ Use real PostgreSQL/PostGIS in integration tests. SQLite is insufficient for par
 
 ## Critical concurrency tests
 
+- Concurrent refresh of one token permits one rotation and treats the other as family-revoking replay.
+- Concurrent dealer membership changes serialize on current rows and reject stale expected versions.
 - Two devices change one reaction with expected_version.
 - Duplicate interest create with same/different idempotency keys.
 - Concurrent interest accept/withdraw/expire.
@@ -88,6 +90,10 @@ Use real PostgreSQL/PostGIS in integration tests. SQLite is insufficient for par
 
 ## Contract and privacy tests
 
+- Registration rejects account-type selection; authentication/profile/session contracts expose no stored hashes.
+- Login/recovery failures are generic; verification attempts, expiry, and single use are enforced.
+- Access tokens are denied after suspension or session-family revocation; session/profile reads are user-scoped.
+- Dealer permission roles, organization suspension, membership removal, audit redaction, and cache invalidation are Phase 1 regression boundaries.
 - Personal listing schemas cannot contain coordinates, street address, geohash/cell, or exact distance.
 - Unavailable listings remove public location and sensitive content.
 - Dealer metadata inbox cannot return message body/preview.
@@ -95,6 +101,55 @@ Use real PostgreSQL/PostGIS in integration tests. SQLite is insufficient for par
 - Media derivative contains no GPS/EXIF/embedded thumbnail.
 - Verification/admin endpoints require purpose and produce audit entry.
 - Cursor cannot be reused with changed filters/location.
+
+Backend Phase 2 adds focused coverage for catalogue hierarchy/uniqueness, exactly-one-owner
+listing constraints, idempotent audit/outbox draft creation, optimistic versions, dealer
+membership loss, signed owner cursors, real PostGIS `ST_DWithin`, coordinate-free location
+responses, and real LocalStack quarantine intent/completion/removal. Media scanning, derivative
+sanitization, moderation, publication, discovery, mobile, browser, and load tests remain excluded
+until their owning phases are implemented.
+
+Backend Phase 3 Slice 1 adds focused unit coverage for orientation, bounded decode, re-encoding,
+metadata stripping, version matching, scanner outcomes, and fail-closed configuration. Real
+PostgreSQL/LocalStack coverage owns private derivative creation, duplicate/stale delivery,
+signature/MIME/checksum rejection, status privacy/IDOR, and atomic finalization. Content
+moderation decisions, publication, discovery, mobile, browser, load, n8n, and external-provider
+tests remain excluded.
+
+Backend Phase 3 Slice 2 adds focused state-machine/provider/configuration unit coverage. Real
+PostgreSQL coverage owns idempotent and concurrent attempt creation, append-only history,
+duplicate/conflicting/stale result handling, atomic projection/audit/outbox finalization and
+rollback, privacy-safe start/status contracts, and current-user isolation. External provider,
+public webhook, document-storage, expiry/revocation propagation, owner–vehicle verification,
+moderation, publication, and later-phase tests remain excluded.
+
+Backend Phase 3 Slice 3 adds focused normalization/HMAC, material-fingerprint, ownership-state,
+provider, safe-failure, schema-privacy, and fail-closed configuration unit coverage. Real
+PostgreSQL coverage owns personal-owner authorization, identity gating, idempotent/concurrent
+canonical resolution, append-only history, duplicate/conflicting/stale results, atomic
+attempt/audit/outbox finalization and rollback, and privacy-safe start/status contracts. Dealer,
+cross-owner, raw-identifier, capture-URL, and provider-evidence leakage are negative assertions.
+External providers/webhooks, publication ownership checks, 180-day reuse, revocation propagation,
+moderation, publication, discovery, mobile, browser, load, and n8n tests remain excluded.
+
+Backend Phase 3 Slice 4 adds focused unit coverage for every readiness gate, safe-code mapping,
+stale listing/media evidence, the response privacy allowlist, and the invariant that all
+pre-moderation gates still cannot publish. Real PostgreSQL coverage owns idempotent/versioned
+personal submission, cross-owner and dealer boundaries, safe missing-source blockers, one durable
+moderation request, duplicate suppression, stale evidence, transaction rollback, and API privacy.
+Moderation decisions, publication/relisting/availability, verification reuse, dealer submission,
+revocation propagation, LocalStack processing, discovery, mobile, browser/load, n8n, and external
+provider tests remain excluded.
+
+Backend Phase 3 Slice 5 adds focused pure-policy coverage for eligibility, provider-versus-policy
+effective expiry, immutable source expiry, binding/version mismatches, restricted/revoked/pending/
+superseded states, newer conflicts, dealer exclusion, and safe codes. Focused real-PostgreSQL
+coverage owns cross-listing reuse, no provider/new-attempt behavior, idempotent and concurrent
+duplicate suppression, submission provenance/readiness, provider and policy expiry, source-proof
+immutability, identity/vehicle-version invalidation, authorization, and response/audit/outbox
+privacy. Publication-time ownership checks, moderation/admin, publication/relisting, dealer
+inventory verification, revocation workers, external providers, discovery, mobile, browser/load,
+LocalStack media processing, and n8n tests remain excluded.
 
 ## Validation commands
 
@@ -146,3 +201,20 @@ IaC commands are not confirmed until the tool is selected.
 - Mobile release signed, obfuscated as appropriate, and crash-free staging soak completed.
 
 No test claim is valid unless the exact command and environment are reported.
+
+## Implementation and validation workflow
+
+- The main Codex agent exclusively owns production code, migrations, dependencies, tests, OpenAPI, documentation, and validation.
+- Implement large phases through bounded vertical slices that deliver one coherent behavior across database, service, authorization, API, audit/outbox, and focused tests.
+- Before implementation, define a requirement-to-test impact matrix listing mandatory and explicitly excluded tests.
+- Complete each vertical slice before starting the next.
+- During each slice, run only targeted Ruff, mypy, and affected tests.
+- Test behavior at the lowest reliable layer; do not duplicate the same rule across unit, repository, API, integration, and end-to-end tests.
+- Do not run the complete backend suite after every slice or localized fix.
+- Run the complete backend acceptance suite once after all slices and targeted checks pass.
+- Do not add or run tests for unrelated phases, mobile, unchanged infrastructure, hypothetical behavior, or requirements already proven at the correct layer.
+- Add a regression test only when an acceptance requirement lacks coverage or a demonstrated defect would otherwise recur.
+- Apply bounded command timeouts and terminate unexpected stalls instead of waiting indefinitely.
+- Validation reports must include exact commands, exit codes, concise results, coverage where required, unresolved blockers, and confirmation that no secret values were exposed.
+- Distinguish implementation failures from environment or tooling failures before changing source code.
+- Stop immediately when the current phase acceptance criteria pass; do not begin the next phase.

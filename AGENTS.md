@@ -2,11 +2,14 @@
 
 ## Verified repository state
 
-The checkout contains architecture documentation and the implemented backend Phase 0 foundation. It has no Flutter application or product-domain modules yet. A `.git/` directory exists, but Git does not recognise this checkout as a repository.
+The checkout contains architecture documentation, the validated backend Phase 0 foundation,
+implemented backend Phase 1 identity/authorization modules, and backend Phase 2 catalogue,
+private listing draft, PostGIS location, and quarantine media modules. It has no Flutter
+application or Phase 3+ product modules. Git currently recognises this checkout on `main`.
 
 ## Project purpose and features
 
-WheelMatch is designed as a swipe-based car and bike marketplace. The implemented backend currently provides only platform foundations: health probes, configuration, telemetry, RFC-style errors, PostgreSQL durability primitives, SQS worker infrastructure, and local containers. Product features remain specified in `docs/` and are not implemented.
+WheelMatch is designed as a swipe-based car and bike marketplace. The implemented backend provides platform foundations plus identity, profiles, seller-readiness state, refresh sessions, dealer organizations/memberships, centralized permissions, audit records, and authorization cache invalidation. Catalogue, listings, discovery, matching, messaging, notifications, provider verification, administration, and mobile remain specified but unimplemented.
 
 ## Technology stack and dependencies
 
@@ -22,8 +25,10 @@ WheelMatch is designed as a swipe-based car and bike marketplace. The implemente
 - `.agents/`: present but no established skill or instruction convention was found.
 - `backend/app/bootstrap/`: FastAPI application factory and lifespan.
 - `backend/app/core/`: configuration, database, errors, events, health, idempotency, outbox and telemetry.
+- `backend/app/modules/identity/`, `profiles/`, `dealers/`, `authorization/`, `audit/`: backend Phase 1.
+- `backend/app/modules/catalogue/`, `listings/`, `locations/`, `media/`: backend Phase 2.
 - `backend/app/workers/`: SQS consumer and outbox-relay process entry points.
-- `backend/migrations/`: Alembic baseline. `backend/tests/`: unit and real-service integration tests.
+- `backend/migrations/`: Phase 0 baseline, Phase 1 identity/authorization, and Phase 2 product-foundation migrations. `backend/tests/`: unit and real-service integration tests.
 - `infra/localstack/`: local SQS, DLQ and private S3 bucket initialization.
 - `.github/workflows/backend-ci.yml`: backend CI. `docs/`: approved target architecture and roadmap.
 
@@ -44,7 +49,7 @@ WheelMatch is designed as a swipe-based car and bike marketplace. The implemente
 | Format/lint | `.\.venv\Scripts\ruff format --check backend`; `.\.venv\Scripts\ruff check backend` |
 | Type check | `.\.venv\Scripts\mypy --config-file backend\pyproject.toml backend` |
 | Unit test | `.\.venv\Scripts\pytest backend\tests\unit` |
-| Integration test | `powershell -File backend\scripts\run-integration.ps1 -EnvFile .env` |
+| Integration test | `powershell -File backend\scripts\run-integration.ps1 -EnvFile .env -TestPath backend\tests -Coverage` |
 | Database migration | `docker compose --env-file .env run --rm migrate` |
 | OpenAPI drift | `.\.venv\Scripts\python backend\scripts\export_openapi.py --check` |
 | Deployment | Not confirmed |
@@ -53,7 +58,7 @@ Before running a command, locate it in checked-in documentation, a manifest, or 
 
 ## Environment variables
 
-`Settings` reads `.env` and `WHEELMATCH_`-prefixed variables. `.env.example` documents local Compose variables and safe placeholders. Verified application variables cover environment/logging, database/Redis URLs, AWS region/endpoint, SQS queue, S3 bucket, Sentry, readiness, pools and worker/outbox polling.
+`Settings` reads `.env` and `WHEELMATCH_`-prefixed variables. `.env.example` documents local Compose variables and safe placeholders. Verified application variables cover environment/logging, database/Redis URLs, AWS region/endpoint, SQS queue, S3 bucket, Sentry, readiness, pools, worker/outbox polling, token signing/hash secrets, authentication expiry/lockout/rate limits, and authorization-cache TTL.
 
 - Never read, print, commit, or copy secret values into code, logs, Markdown, tests, or n8n node parameters.
 - Document only variable names that are verified from checked-in configuration.
@@ -61,7 +66,13 @@ Before running a command, locate it in checked-in documentation, a manifest, or 
 
 ## Database, API, and external services
 
-PostgreSQL/PostGIS is authoritative. Phase 0 migrations create `idempotency_keys`, `outbox_events` and `consumer_events`. Redis is a required readiness dependency. SQS provides redeliverable events with a DLQ; S3 is initialized private in LocalStack. Sentry and AWS Secrets Manager are optional adapters. Only health APIs exist; no product or n8n application integration is implemented.
+PostgreSQL/PostGIS is authoritative. Phase 0 migrations create durability primitives; Phase 1
+adds identity, profile, dealer, session, authorization, and audit state; Phase 2 adds controlled
+catalogue/canonical vehicle rows, exactly-one-owner private drafts, typed specifications, private
+geography points, verified dealer public-address foundations, and private quarantine media state.
+Redis provides readiness, authentication limiting, and versioned authorization projections.
+SQS/S3 and optional Sentry/Secrets Manager adapters remain infrastructure. Identity delivery,
+media processing/moderation providers, publication, and n8n integration are not implemented.
 
 ## Coding and naming conventions
 
@@ -74,6 +85,34 @@ PostgreSQL/PostGIS is authoritative. Phase 0 migrations create `idempotency_keys
 - Keep repository-local Codex skills under `.codex/skills/<lowercase-hyphen-name>/SKILL.md` unless a different checked-in convention supersedes it.
 - Keep instruction changes concise and avoid restating generic engineering guidance.
 - Do not introduce a framework, dependency, directory layout, or naming scheme without an explicit task requiring it.
+
+## Implementation and validation workflow
+
+- The main Codex agent exclusively owns production code, migrations, dependencies, tests, OpenAPI, documentation, and validation.
+- Implement large phases through bounded vertical slices that deliver one coherent behavior across database, service, authorization, API, audit/outbox, and focused tests.
+- Before implementation, define a requirement-to-test impact matrix listing mandatory and explicitly excluded tests.
+- Complete each vertical slice before starting the next.
+- During each slice, run only targeted Ruff, mypy, and affected tests.
+- Test behavior at the lowest reliable layer; do not duplicate the same rule across unit, repository, API, integration, and end-to-end tests.
+- Do not run the complete backend suite after every slice or localized fix.
+- Run the complete backend acceptance suite once after all slices and targeted checks pass.
+- Do not add or run tests for unrelated phases, mobile, unchanged infrastructure, hypothetical behavior, or requirements already proven at the correct layer.
+- Add a regression test only when an acceptance requirement lacks coverage or a demonstrated defect would otherwise recur.
+- Apply bounded command timeouts and terminate unexpected stalls instead of waiting indefinitely.
+- Validation reports must include exact commands, exit codes, concise results, coverage where required, unresolved blockers, and confirmation that no secret values were exposed.
+- Distinguish implementation failures from environment or tooling failures before changing source code.
+- Stop immediately when the current phase acceptance criteria pass; do not begin the next phase.
+
+## Shell execution limits
+
+- Set a 30-second timeout for read-only inspection commands such as `rg`, Git status, file inspection, and small JSON parsing.
+- Terminate unexpected inspection stalls and report `TOOLING_TIMEOUT`; do not wait several minutes.
+- Do not retry a timed-out command using the same implementation.
+- Run exploratory commands only when they map to the current requirement-to-test impact matrix.
+- Do not use PowerShell `ConvertFrom-Json` for `backend/openapi.json`.
+- Validate OpenAPI with `.\.venv\Scripts\python backend\scripts\export_openapi.py --check`.
+- If OpenAPI metadata inspection is genuinely necessary, use Python’s `json` module.
+- Longer tests, migrations, and Docker commands may use documented task-specific timeouts when progress is visible.
 
 ## Security requirements
 
